@@ -1,0 +1,134 @@
+---
+title: "Neptun exam file cleaner"
+runtime: shiny
+output: 
+    flexdashboard::flex_dashboard
+
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(readxl)
+library(tidyverse)
+library(shiny)
+library(stringdist)
+
+# These will be used to translate grade strings to numbers
+grades_str <- c("Jeles" = 5L,
+                "Excellent" = 5L,
+                "Jó" = 4L,
+                "Good" = 4L,
+                "Közepes" = 3L,
+                "Satisfactory" = 3L,
+                "Elégséges" = 2L,
+                "Pass" = 2L,
+                "Elégtelen" = 1L,
+                "Fail" = 1L)
+```
+
+
+Steps {.sidebar}
+-------------------------------------
+### 1) Upload participant Neptun codes
+This file is provided by the project administrators. If you don't have this file, please write an email to this address:
+<a href="mailto:stress.and.emotions.lab@gmail.com" target="_blank">stress.and.emotions.lab@gmail.com</a> 
+```{r}
+fileInput("file_txt", "Add neptun codes",
+          multiple = FALSE,
+          accept = c(
+              "text/csv",
+              "text/comma-separated-values,text/plain",
+              ".txt"))
+```
+
+### 2) Upload Neptun exam file
+Tutorial about how to get this data file from neptun can be found here: 
+<a href="https://osf.io/fdwm9/" target="_blank">https://osf.io/fdwm9/</a>
+```{r}
+fileInput("file_xlsx", "Choose the excel file",
+          multiple = FALSE,
+          accept = c(
+              "application/vnd.ms-excel",
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              ".xlsx",
+              ".xls"
+              ))
+```
+
+### 3) Check the data ->
+The data has been cleaned and non-consenting participant exam results were anonymized.
+
+
+### 4) Download data
+```{r}
+downloadButton("downloadData", "Download")
+
+downloadHandler(filename = function() {
+                    str_glue("results_{first(df()$course_code)}_{first(df()$date)}_{first(df()$time)}.tsv")},
+                content = function(con) {write_tsv(x = df(), path = con)}, 
+                contentType = "text/tsv"
+)
+
+```
+
+### 5) Upload file
+Please upload the data in the following link
+<a href="https://goo.gl/forms/n6Kda0c89cJmwIXp1" target="_blank"> **Upload file**</a>
+
+Row
+-------------------------------------
+
+```{r}
+
+df <-
+    eventReactive(!is.null(input$file_xlsx$datapath) & !is.null(input$file_txt$datapath), {
+        
+    validate(
+      need(input$file_xlsx != "", "Please upload the grades"),
+      need(input$file_txt != "", "Please upload the Neptun codes")
+    )
+    
+    processed_file <-    
+        read_excel(input$file_xlsx$datapath, col_types = "text") %>%
+        # Keep only course code, neptune id, and grade
+        select(course_code = 1, neptun = 3, grade = 6) %>%
+        # Remove names
+        mutate(neptun = str_replace(neptun, "^.* \\( ", "") %>%
+                        str_replace(" \\)", ""),
+               # Read date and time from filename
+               exam_date = str_replace(input$file_xlsx$name, 
+                                       ".*_(\\d{4}.*)_.*$", "\\1"),
+               # Recode text grade to numeric
+               grade = recode(grade, !!!grades_str)) %>%
+        # Separate date and time details into components
+        separate(exam_date, 
+                 into = c("year", "month", "day", "hour", "minute"), 
+                 sep = "_") %>%
+        # Unite variables to compact date and time
+        unite(date, year, month, day, sep = "-") %>%
+        unite(time, hour, minute, sep = ":")
+    
+    # Match neptun codes with a possible difference of 1 character
+    # This also deletes the neptun codes of participants without exam data processing consent
+    matched_neptun <-
+        processed_file$neptun[stringdist::ain(processed_file$neptun, 
+                                              read_lines(input$file_txt$datapath), 
+                                              method = "osa", 
+                                              maxDist = 1)]
+    
+    # If only one person did not give permission from the group, remove another one at random
+    # This ensures that the person is unidentifiable
+    if (sum(!is.na(matched_neptun)) == length(matched_neptun) - 1) 
+        matched_neptun[sample(length(matched_neptun), 1)] <- NA
+    
+    processed_file %>% 
+        mutate(neptun = if_else(neptun %in% matched_neptun, neptun, NA_character_)) %>%
+        # Scramble the outcome file, so the order holds no information
+        dplyr::sample_frac(1)
+})
+
+renderDataTable({df()})
+
+``` 
+
+
