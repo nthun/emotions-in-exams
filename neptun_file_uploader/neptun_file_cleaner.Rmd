@@ -119,7 +119,7 @@ df <-
     
     # If only one person did not give permission from the group, remove another one at random
     # This ensures that the person is unidentifiable
-    if (sum(!is.na(matched_neptun)) == length(matched_neptun) - 1) 
+    if (sum(!is.na(matched_neptun)) == nrow(processed_file) - 1)
         matched_neptun[sample(length(matched_neptun), 1)] <- NA
     
     processed_file %>% 
