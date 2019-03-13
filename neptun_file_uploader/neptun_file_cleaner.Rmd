@@ -82,16 +82,17 @@ Row
 
 df <-
     eventReactive(!is.null(input$file_xlsx$datapath) & !is.null(input$file_txt$datapath), {
-        
+    
     validate(
       need(input$file_xlsx != "", "Please upload the grades"),
       need(input$file_txt != "", "Please upload the Neptun codes")
     )
-    
+
     processed_file <-    
         read_excel(input$file_xlsx$datapath, col_types = "text") %>%
         # Keep only course code, neptune id, and grade
         select(course_code = 1, neptun = 3, grade = 6) %>%
+        drop_na(neptun) %>% 
         # Remove names
         mutate(neptun = str_replace(neptun, "^.* \\( ", "") %>%
                         str_replace(" \\)", ""),
